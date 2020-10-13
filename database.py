@@ -1,7 +1,8 @@
+import os
 from pymongo import MongoClient
 
-
-client = MongoClient('mongodb://localhost:27017/')
+# mongodb connection
+client = MongoClient(os.environ["MONGODB_URI"])
 db = client.sdb2
 proposals_collections = db.Proposals
 blocks_collections = db.Blocks
