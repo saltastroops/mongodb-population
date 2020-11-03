@@ -8,13 +8,14 @@
 import os
 import re
 from glob import glob
+from datetime import datetime
 
 from typing import List, Dict, Optional
 import xmltodict
 
 import click
 
-from database import proposals_collections, blocks_collections
+from database import connection
 from generate_json import remove_namespaces
 
 
@@ -77,28 +78,11 @@ def get_all_proposals(base_dir: str) -> List[str]:
     type=click.Path(resolve_path=True),
     help="Path of the JSON file to create",
 )
-@click.option(
-    "--min_blocks",
-    "min_blocks",
-    type=click.INT,
-    help="The minimum number of blocks for a proposal version",
-)
-@click.option(
-    "--proposal_loop",
-    "proposal_loop",
-    type=click.INT,
-    help="The minimum number of blocks for a proposal version",
-)
-# @click.option(
-#     "--max_block",
-#     "max_block",
-#     type=click.INT,
-#     help="The maximum number of blocks for a proposal version",
-# )
 def main(base_dir, min_blocks, proposal_loop):
     proposals_dirs = get_all_proposals(base_dir)
     loop_count = 0
-    print(loop_count <= proposal_loop, loop_count,  proposal_loop)
+    start_time = datetime.now()
+    connection.begin()
     while loop_count <= proposal_loop:
         for proposal in proposals_dirs:
             proposal_xml_files = read_director(proposal)
@@ -106,25 +90,30 @@ def main(base_dir, min_blocks, proposal_loop):
                 with open(proposal_xml_files["proposal"]) as proposal_xml:
                     proposal_json = xmltodict.parse(proposal_xml.read())
                     without_namespaces = remove_namespaces(proposal_json)["Proposal"]
-                    without_namespaces["code"] = without_namespaces["code"] + "-" + str(loop_count)
+                    proposal_code = without_namespaces["code"]
 
-                    proposal_id = proposals_collections.insert_one(without_namespaces).inserted_id
                 num_blocks = 0
-                block_loop_count = 0
                 while num_blocks < min_blocks:
                     for block in proposal_xml_files["blocks"]:
                         with open(block) as block_xml:
                             block_json = xmltodict.parse(block_xml.read())
                             without_namespaces = remove_namespaces(block_json)
-                            without_namespaces["Block"]["proposal_id"] = proposal_id
-                            without_namespaces["Block"]["id"] = without_namespaces["Block"]["id"] + f"-{block_loop_count}"
-                            without_namespaces["Block"]["Name"] = without_namespaces["Block"]["Name"] + f"-{block_loop_count}"
-                            without_namespaces["Block"]["BlockCode"] = without_namespaces["Block"]["BlockCode"] + f"-{block_loop_count}"
-                            blocks_collections.insert_one(without_namespaces["Block"])
-                    num_blocks = blocks_collections.count_documents({"proposal_id": proposal_id})
-                    block_loop_count += 1
-                print(num_blocks)
-        loop_count += 1
+                            block_code = without_namespaces["Block"]["BlockCode"]
+                            update_sql = f"""
+                            UPDATE Block AS b
+                                JOIN ProposalCode AS pc ON pc.ProposalCode_Id = bl.ProposalCode_Id
+                                JOIN BlockCode AS bc ON bc.BlockCode_Id = bl.BlockCode_Id
+                            SET Block_JSON = {without_namespaces["Block"]}
+                            WHERE b.BlockCode = {block_code} AND pc.Proposal_Code = {proposal_code} 
+                            """
+                            try:
+                                with connection.cursor() as cur:
+                                    cur.execute(update_sql)
+                            except:
+                                connection.rollback()
+                            finally:
+                                connection.close()
+
 
 if __name__ == '__main__':
     main()

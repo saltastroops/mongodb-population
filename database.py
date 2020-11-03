@@ -1,9 +1,13 @@
 import os
-from pymongo import MongoClient
+import pymysql
 
-# mongodb connection
-client = MongoClient(os.environ["MONGODB_URI"])
-db = client.sdb2
-proposals_collections = db.Proposals
-blocks_collections = db.Blocks
-blocks = db.Blocks
+
+SDB_HOST = os.getenv("SDB_HOST")
+SDB_DATABASE_USER = os.getenv("SDB_DATABASE_USER")
+SDB_DATABASE_PASSWORD = os.getenv("SDB_DATABASE_PASSWORD")
+SDB_DATABASE_NAME = os.getenv("SDB_DATABASE_NAME")
+
+# mysql connection
+connection = pymysql.connect(
+    host=SDB_HOST, user=SDB_DATABASE_USER, passwd=SDB_DATABASE_PASSWORD, db=SDB_DATABASE_NAME, port=3306
+)
