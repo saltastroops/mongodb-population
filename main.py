@@ -78,42 +78,36 @@ def get_all_proposals(base_dir: str) -> List[str]:
     type=click.Path(resolve_path=True),
     help="Path of the JSON file to create",
 )
-def main(base_dir, min_blocks, proposal_loop):
+def main(base_dir):
     proposals_dirs = get_all_proposals(base_dir)
     loop_count = 0
     start_time = datetime.now()
     connection.begin()
-    while loop_count <= proposal_loop:
-        for proposal in proposals_dirs:
-            proposal_xml_files = read_director(proposal)
-            if proposal_xml_files:
-                with open(proposal_xml_files["proposal"]) as proposal_xml:
-                    proposal_json = xmltodict.parse(proposal_xml.read())
-                    without_namespaces = remove_namespaces(proposal_json)["Proposal"]
-                    proposal_code = without_namespaces["code"]
 
-                num_blocks = 0
-                while num_blocks < min_blocks:
-                    for block in proposal_xml_files["blocks"]:
-                        with open(block) as block_xml:
-                            block_json = xmltodict.parse(block_xml.read())
-                            without_namespaces = remove_namespaces(block_json)
-                            block_code = without_namespaces["Block"]["BlockCode"]
-                            update_sql = f"""
-                            UPDATE Block AS b
-                                JOIN ProposalCode AS pc ON pc.ProposalCode_Id = bl.ProposalCode_Id
-                                JOIN BlockCode AS bc ON bc.BlockCode_Id = bl.BlockCode_Id
-                            SET Block_JSON = {without_namespaces["Block"]}
-                            WHERE b.BlockCode = {block_code} AND pc.Proposal_Code = {proposal_code} 
-                            """
-                            try:
-                                with connection.cursor() as cur:
-                                    cur.execute(update_sql)
-                            except:
-                                connection.rollback()
-                            finally:
-                                connection.close()
+    for proposal in proposals_dirs:
+        proposal_xml_files = read_director(proposal)
+        if proposal_xml_files:
+            with open(proposal_xml_files["proposal"]) as proposal_xml:
+                proposal_json = xmltodict.parse(proposal_xml.read())
+                without_namespaces = remove_namespaces(proposal_json)["Proposal"]
+                proposal_code = without_namespaces["code"]
 
+            num_blocks = 0
+            for block in proposal_xml_files["blocks"]:
+                with open(block) as block_xml:
+                    block_json = xmltodict.parse(block_xml.read())
+                    without_namespaces = remove_namespaces(block_json)
+                    block_code = without_namespaces["Block"]["BlockCode"]
+                    update_sql = f"""
+                    UPDATE Block AS bl
+                        JOIN ProposalCode AS pc ON pc.ProposalCode_Id = bl.ProposalCode_Id
+                        JOIN BlockCode AS bc ON bc.BlockCode_Id = bl.BlockCode_Id
+                    SET JsonContent = "{without_namespaces["Block"]}"
+                    WHERE bc.BlockCode = '{block_code}' AND pc.Proposal_Code = '{proposal_code}' 
+                    """
+                    with connection.cursor() as cur:
+                        cur.execute(update_sql)
+                        connection.commit()
 
 if __name__ == '__main__':
     main()
